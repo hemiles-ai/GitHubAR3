@@ -2,7 +2,6 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { RecognitionResult } from "../types";
 
-// Helper to safely get key from the shimmed process object
 const getApiKey = () => {
   try {
     return (window as any).process?.env?.API_KEY || process.env.API_KEY || "";
@@ -11,37 +10,33 @@ const getApiKey = () => {
   }
 };
 
-const WHITE_HOUSE_IMAGE = "https://images.unsplash.com/photo-1501466044931-62695aada8e9?q=80&w=1200&auto=format&fit=crop";
-const DATA_CENTER_IMAGE = "https://images.unsplash.com/photo-1558494949-ef010cbdcc51?q=80&w=1200&auto=format&fit=crop";
-
 const RECOGNITION_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    name: { type: Type.STRING, description: "Short common name of the object" },
-    category: { type: Type.STRING, description: "General category" },
-    description: { type: Type.STRING, description: "One-sentence informative description" },
-    funFact: { type: Type.STRING, description: "Detailed facts" },
-    visualPrompt: { type: Type.STRING, description: "Prompt for AI image generation" },
-    confidence: { type: Type.NUMBER, description: "Confidence score" }
+    name: { type: Type.STRING, description: "Short, impactful name of the object" },
+    category: { type: Type.STRING, description: "Object classification (e.g., Tech, Architecture, Flora)" },
+    description: { type: Type.STRING, description: "Concise summary of what this object is" },
+    funFact: { type: Type.STRING, description: "Deep lore or interesting history about this type of object" },
+    visualPrompt: { type: Type.STRING, description: "A cinematic noir prompt to reimagine this object" },
+    confidence: { type: Type.NUMBER, description: "AI confidence 0-1" },
+    tacticalAnalysis: { type: Type.STRING, description: "A 'tactical' or 'technical' breakdown of the object's purpose" },
+    materialComposition: { type: Type.STRING, description: "Estimated materials (e.g., Polymer, Steel, Carbon Fiber)" }
   },
-  required: ["name", "category", "description", "funFact", "visualPrompt", "confidence"]
+  required: ["name", "category", "description", "funFact", "visualPrompt", "confidence", "tacticalAnalysis", "materialComposition"]
 };
 
 export async function recognizeObject(
   base64Image: string,
-  clickX?: number,
-  clickY?: number
+  clickX: number,
+  clickY: number
 ): Promise<RecognitionResult | null> {
   try {
     const apiKey = getApiKey();
-    if (!apiKey) throw new Error("API_KEY_NOT_CONFIGURED");
+    if (!apiKey) throw new Error("API_KEY_MISSING");
     
     const ai = new GoogleGenAI({ apiKey });
-    const prompt = `Strictly identify the object at (${Math.round(clickX || 50)}%, ${Math.round(clickY || 50)}%). 
-    
-    OVERRIDES: 
-    1. If target is SILVER/METAL pin: White House (Washington D.C).
-    2. If target is CLEAR/GLASS pin: IAD13 Data Center (Ashburn Virginia).`;
+    const prompt = `Perform a high-precision identification of the object at coordinates (${Math.round(clickX)}%, ${Math.round(clickY)}%) in the provided image. 
+    Provide a professional, tactical, and slightly futuristic intelligence report.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -58,19 +53,7 @@ export async function recognizeObject(
     });
 
     if (!response.text) return null;
-    const result = JSON.parse(response.text) as RecognitionResult;
-    
-    const nameLower = (result.name || "").toLowerCase();
-    if (nameLower.includes('white house')) {
-      result.name = 'White House';
-      result.referenceImage = WHITE_HOUSE_IMAGE;
-    } else if (nameLower.includes('iad13') || nameLower.includes('data center')) {
-      result.name = 'IAD13 Data Center';
-      result.referenceImage = DATA_CENTER_IMAGE;
-      result.weatherFacts = `Blizzard of 2016 ("Jonas"): 36 inches of snow.\nExtreme Heat 2024: 104°F recorded.`;
-    }
-
-    return result;
+    return JSON.parse(response.text) as RecognitionResult;
   } catch (error) {
     console.error("Recognition failure:", error);
     return null;
@@ -125,7 +108,7 @@ export async function generateAIVisual(prompt: string): Promise<string | null> {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-image",
       contents: {
-        parts: [{ text: `A grayscale noir architectural photo of: ${prompt}.` }]
+        parts: [{ text: `A futuristic holographic blueprint style render of: ${prompt}. High contrast, blueprint blue and white lines, cinematic lighting.` }]
       },
       config: { imageConfig: { aspectRatio: "1:1" } }
     });

@@ -1,6 +1,6 @@
 {
-  "name": "VisionAR - AI Object Intelligence 3 Tester",
-  "description": "An interactive AR-like experience that recognizes real-world objects through your camera and provides deep intelligence, descriptions, and AI-reimagined visuals using Gemini.",
+  "name": "VisionAR - Advanced Neural Object Recognition",
+  "description": "An interactive AR experience with spatial tagging, persistent intelligence labels, and AI-reimagined visuals using Gemini 3 and 2.5 series models.",
   "requestFramePermissions": [
     "camera"
   ]

@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { AppStatus, RecognitionResult, ClickPosition } from './types';
+import { AppStatus, RecognitionResult, ClickPosition, PersistentTag } from './types';
 import { recognizeObject, generateAIVisual, speakMessage } from './services/geminiService';
 import HUDOverlay from './components/HUDOverlay';
 import IntelligencePanel from './components/IntelligencePanel';
@@ -13,6 +13,9 @@ const App: React.FC = () => {
   const [aiImage, setAiImage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [clickPos, setClickPos] = useState<ClickPosition | null>(null);
+  
+  // Persistent world labels
+  const [tags, setTags] = useState<PersistentTag[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,9 +23,7 @@ const App: React.FC = () => {
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setErrorMessage("CRITICAL: Secure Context Required (HTTPS) for hardware uplink.");
-        setStatus(AppStatus.ERROR);
-        return;
+        throw new Error("SECURE_CONTEXT_REQUIRED: Access denied.");
       }
 
       setStatus(AppStatus.CAMERA_REQUEST);
@@ -42,10 +43,12 @@ const App: React.FC = () => {
         };
       }
     } catch (err: any) {
-      console.error("Camera error:", err);
-      let msg = "Hardware authorization failed.";
+      console.error("Camera failure:", err);
+      let msg = "Neural hardware authorization failed.";
       if (err.name === 'NotAllowedError') msg = "Access Denied: Grant camera permissions.";
-      else if (err.message) msg = err.message;
+      else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+        msg = "SECURE_CONTEXT_REQUIRED: AR requires HTTPS protocol.";
+      }
       
       setErrorMessage(msg);
       setStatus(AppStatus.ERROR);
@@ -63,16 +66,13 @@ const App: React.FC = () => {
     if (!ctx) return null;
     
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+    return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
   }, []);
 
   const handleScanClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     if (isAnalyzing || status !== AppStatus.SCANNING) return;
 
-    // Tactical Haptics
-    if ('vibrate' in navigator) {
-      navigator.vibrate(50);
-    }
+    if ('vibrate' in navigator) navigator.vibrate(30);
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -92,21 +92,30 @@ const App: React.FC = () => {
       const result = await recognizeObject(base64Image, x, y);
       
       if (result) {
-        if ('vibrate' in navigator) navigator.vibrate([30, 80, 30]);
+        if ('vibrate' in navigator) navigator.vibrate([20, 100, 20]);
+        
+        // Save as persistent tag
+        const newTag: PersistentTag = {
+          id: Math.random().toString(36).substr(2, 9),
+          x,
+          y,
+          name: result.name,
+          category: result.category,
+          timestamp: Date.now()
+        };
+        setTags(prev => [newTag, ...prev].slice(0, 10)); // Keep last 10 tags
+
         setSelectedObject(result);
         setStatus(AppStatus.VIEWING_RESULT);
         
-        // Automatic Intel Briefing
-        if (result.name === 'White House' || result.name === 'IAD13 Data Center') {
-          speakMessage(`Target identified: ${result.name}. Initializing intelligence brief.`);
-        }
+        // Voice briefing
+        speakMessage(`Neural lock established. Target identified as ${result.name}. Categorized as ${result.category}. Ready for intelligence download.`);
 
-        if (!result.referenceImage || result.name === 'IAD13 Data Center') {
-          setIsGeneratingImage(true);
-          const imageUrl = await generateAIVisual(result.visualPrompt);
-          setAiImage(imageUrl);
-          setIsGeneratingImage(false);
-        }
+        // Visual reconstruction
+        setIsGeneratingImage(true);
+        const imageUrl = await generateAIVisual(result.visualPrompt);
+        setAiImage(imageUrl);
+        setIsGeneratingImage(false);
       } else {
         setClickPos(null);
       }
@@ -118,6 +127,15 @@ const App: React.FC = () => {
     }
   };
 
+  const handleTagClick = async (id: string) => {
+    const tag = tags.find(t => t.id === id);
+    if (!tag) return;
+    
+    // For now, we just re-run the analysis at those coords or show placeholder
+    // In a full app, we'd store the result object with the tag.
+    // For this demo, let's just use the current selected state logic.
+  };
+
   const closePanel = () => {
     setSelectedObject(null);
     setAiImage(null);
@@ -126,32 +144,33 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col grayscale-custom select-none touch-none">
+    <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col select-none touch-none">
       <canvas ref={canvasRef} className="hidden" />
 
       <div className="relative flex-1 bg-black overflow-hidden">
         {status === AppStatus.INITIAL ? (
-          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-12 text-center bg-[#050505]">
-            <div className="mb-14 relative">
-              <div className="w-28 h-28 border border-white/5 rounded-full flex items-center justify-center animate-[pulse_4s_infinite]">
-                <div className="w-2 h-2 bg-white rounded-full shadow-[0_0_10px_white]"></div>
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-12 text-center bg-[#000]">
+            <div className="mb-20 relative">
+              <div className="w-32 h-32 border border-white/5 rounded-full flex items-center justify-center animate-pulse">
+                <div className="w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_15px_white]"></div>
               </div>
-              <div className="absolute inset-0 border-r-2 border-white/30 rounded-full animate-spin-slow"></div>
-              <div className="absolute inset-4 border-l border-white/10 rounded-full animate-spin-reverse-slow"></div>
+              <div className="absolute inset-0 border-t border-b border-white/40 rounded-full animate-spin-slow"></div>
+              <div className="absolute inset-2 border-l border-r border-white/10 rounded-full animate-spin-reverse-slow"></div>
             </div>
             
-            <h1 className="text-4xl md:text-5xl font-bold tracking-[0.7em] mb-6 text-white uppercase mono">Vision_AR</h1>
-            <p className="text-white/20 max-w-xs text-[10px] leading-relaxed mb-16 uppercase tracking-[0.4em] mono">
-              Neural Processing Substrate<br/>
-              Standard Protocol V.1.5.2<br/>
-              Awaiting Secure Uplink
+            <h1 className="text-4xl md:text-6xl font-black tracking-[0.6em] mb-4 text-white uppercase italic">VISION_AR</h1>
+            <p className="text-white/20 max-w-sm text-[10px] leading-relaxed mb-16 uppercase tracking-[0.4em] mono">
+              Distributed Intelligence Hub<br/>
+              Neural_Net Protocol v.2.0.1<br/>
+              Awaiting Secure Node Uplink
             </p>
             
             <button 
               onClick={startCamera}
-              className="px-16 py-6 border border-white/20 text-white text-[11px] font-bold rounded-sm hover:bg-white hover:text-black transition-all uppercase tracking-[0.5em] mono active:scale-95 bg-transparent"
+              className="group relative px-20 py-6 overflow-hidden border border-white/20 transition-all hover:border-white active:scale-95"
             >
-              Initialize Uplink
+              <div className="absolute inset-0 bg-white translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+              <span className="relative z-10 text-white group-hover:text-black text-[11px] font-bold uppercase tracking-[0.5em] mono">Initialize_Node</span>
             </button>
           </div>
         ) : (
@@ -160,7 +179,7 @@ const App: React.FC = () => {
             autoPlay 
             playsInline 
             muted
-            className="absolute inset-0 w-full h-full object-cover grayscale brightness-[0.8] contrast-[1.1]"
+            className="absolute inset-0 w-full h-full object-cover grayscale brightness-[0.7] contrast-[1.2]"
           />
         )}
 
@@ -170,6 +189,8 @@ const App: React.FC = () => {
             onClick={handleScanClick} 
             isAnalyzing={isAnalyzing}
             clickPos={clickPos}
+            tags={tags}
+            onTagClick={handleTagClick}
           />
         )}
 
@@ -184,41 +205,48 @@ const App: React.FC = () => {
 
         {status === AppStatus.ERROR && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-12 bg-black text-center">
-            <div className="w-16 h-16 border border-red-900/40 flex items-center justify-center mb-8">
-              <span className="text-red-600 font-bold text-2xl mono animate-pulse">!</span>
+            <div className="w-16 h-16 border border-red-500/20 flex items-center justify-center mb-10">
+              <span className="text-red-500 font-black text-2xl mono animate-pulse">!</span>
             </div>
-            <h2 className="text-xl font-bold text-white mb-6 mono tracking-[0.3em] uppercase">Hardware_Error</h2>
-            <p className="text-white/30 mb-14 mono text-[10px] uppercase tracking-[0.2em] leading-loose max-w-sm">
+            <h2 className="text-2xl font-black text-white mb-6 mono tracking-[0.3em] uppercase">SYSTEM_FAULT</h2>
+            <p className="text-white/40 mb-16 mono text-[10px] uppercase tracking-[0.2em] leading-loose max-w-sm">
               {errorMessage}
             </p>
             <button 
               onClick={() => window.location.reload()}
-              className="px-12 py-5 border border-white/10 text-white/50 font-bold mono uppercase text-[10px] tracking-[0.4em] hover:text-white hover:border-white transition-all active:scale-95"
+              className="px-12 py-5 border border-white/20 text-white/50 font-bold mono uppercase text-[10px] tracking-[0.4em] hover:text-white transition-all active:scale-95"
             >
-              Restart_Kernel
+              Reboot_System
             </button>
           </div>
         )}
       </div>
 
-      <footer className="h-12 bg-black border-t border-white/5 flex items-center justify-between px-8 z-20">
-        <div className="flex items-center gap-5">
-          <div className="flex gap-1.5">
-            <div className={`w-0.5 h-3 bg-white/40 ${isAnalyzing ? 'animate-bounce' : ''}`}></div>
-            <div className="w-0.5 h-3 bg-white/10"></div>
-            <div className={`w-0.5 h-3 bg-white/40 ${isAnalyzing ? 'animate-bounce delay-75' : ''}`}></div>
+      <footer className="h-10 bg-[#050505] border-t border-white/5 flex items-center justify-between px-8 z-20">
+        <div className="flex items-center gap-6">
+          <div className="flex gap-1">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className={`w-0.5 h-2 bg-white/20 ${isAnalyzing ? 'animate-pulse' : ''}`} style={{ animationDelay: `${i * 0.1}s` }}></div>
+            ))}
           </div>
-          <span className="text-[8px] font-bold uppercase tracking-[0.5em] text-white/30 mono">Uplink: Secure // Monitoring_Nodes</span>
+          <span className="text-[8px] font-bold uppercase tracking-[0.5em] text-white/30 mono">Uplink: STABLE // Encrypted_Feed</span>
         </div>
-        <div className="text-[8px] font-bold uppercase tracking-[0.4em] text-white/10 mono hidden sm:block">No_Authorized_Intercepts</div>
+        <div className="text-[8px] font-bold uppercase tracking-[0.4em] text-white/20 mono hidden sm:block">No unauthorized access detected</div>
       </footer>
       
       <style>{`
+        .animate-scan {
+          animation: scan 4s linear infinite;
+        }
+        @keyframes scan {
+          0% { top: 0; }
+          100% { top: 100%; }
+        }
         .animate-spin-slow {
-          animation: spin 12s linear infinite;
+          animation: spin 20s linear infinite;
         }
         .animate-spin-reverse-slow {
-          animation: spin-reverse 8s linear infinite;
+          animation: spin-reverse 15s linear infinite;
         }
         @keyframes spin {
           from { transform: rotate(0deg); }

@@ -6,8 +6,18 @@ export interface RecognitionResult {
   funFact: string;
   visualPrompt: string;
   confidence: number;
+  tacticalAnalysis: string;
+  materialComposition: string;
   referenceImage?: string;
-  weatherFacts?: string;
+}
+
+export interface PersistentTag {
+  id: string;
+  x: number;
+  y: number;
+  name: string;
+  category: string;
+  timestamp: number;
 }
 
 export interface ClickPosition {
