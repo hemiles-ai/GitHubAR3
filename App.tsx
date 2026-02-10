@@ -3,18 +3,15 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AppStatus, RecognitionResult, ClickPosition, PersistentTag } from './types';
 import { recognizeObject, generateAIVisual, speakMessage } from './services/geminiService';
 import HUDOverlay from './components/HUDOverlay';
-import IntelligencePanel from './components/IntelligencePanel';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<AppStatus>(AppStatus.INITIAL);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [selectedObject, setSelectedObject] = useState<RecognitionResult | null>(null);
-  const [aiImage, setAiImage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [clickPos, setClickPos] = useState<ClickPosition | null>(null);
+  const [activeTagId, setActiveTagId] = useState<string | null>(null);
   
-  // Persistent world labels
+  // Persistent Pins
   const [tags, setTags] = useState<PersistentTag[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -22,8 +19,12 @@ const App: React.FC = () => {
 
   const startCamera = async () => {
     try {
+      if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+        throw new Error("SECURE_CONTEXT_REQUIRED");
+      }
+
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("SECURE_CONTEXT_REQUIRED: Access denied.");
+        throw new Error("HARDWARE_UNAVAILABLE");
       }
 
       setStatus(AppStatus.CAMERA_REQUEST);
@@ -45,9 +46,10 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error("Camera failure:", err);
       let msg = "Neural hardware authorization failed.";
-      if (err.name === 'NotAllowedError') msg = "Access Denied: Grant camera permissions.";
-      else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-        msg = "SECURE_CONTEXT_REQUIRED: AR requires HTTPS protocol.";
+      if (err.message === "SECURE_CONTEXT_REQUIRED") {
+        msg = "CRITICAL: AR requires a Secure Context (HTTPS). Browser security blocks camera access on insecure origins.";
+      } else if (err.name === 'NotAllowedError') {
+        msg = "Access Denied: Please grant camera permissions in your browser settings.";
       }
       
       setErrorMessage(msg);
@@ -72,6 +74,9 @@ const App: React.FC = () => {
   const handleScanClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     if (isAnalyzing || status !== AppStatus.SCANNING) return;
 
+    // Reset focus when clicking background
+    setActiveTagId(null);
+
     if ('vibrate' in navigator) navigator.vibrate(30);
 
     const rect = e.currentTarget.getBoundingClientRect();
@@ -86,7 +91,6 @@ const App: React.FC = () => {
     }
 
     setIsAnalyzing(true);
-    setAiImage(null);
 
     try {
       const result = await recognizeObject(base64Image, x, y);
@@ -94,53 +98,30 @@ const App: React.FC = () => {
       if (result) {
         if ('vibrate' in navigator) navigator.vibrate([20, 100, 20]);
         
-        // Save as persistent tag
+        // Generate AI Visual Reconstruction
+        const aiVisual = await generateAIVisual(result.visualPrompt);
+
+        const newTagId = Math.random().toString(36).substr(2, 9);
         const newTag: PersistentTag = {
-          id: Math.random().toString(36).substr(2, 9),
+          ...result,
+          id: newTagId,
           x,
           y,
-          name: result.name,
-          category: result.category,
+          aiVisual,
           timestamp: Date.now()
         };
-        setTags(prev => [newTag, ...prev].slice(0, 10)); // Keep last 10 tags
-
-        setSelectedObject(result);
-        setStatus(AppStatus.VIEWING_RESULT);
         
-        // Voice briefing
-        speakMessage(`Neural lock established. Target identified as ${result.name}. Categorized as ${result.category}. Ready for intelligence download.`);
-
-        // Visual reconstruction
-        setIsGeneratingImage(true);
-        const imageUrl = await generateAIVisual(result.visualPrompt);
-        setAiImage(imageUrl);
-        setIsGeneratingImage(false);
-      } else {
-        setClickPos(null);
+        setTags(prev => [newTag, ...prev].slice(0, 15));
+        setActiveTagId(newTagId);
+        
+        speakMessage(`Neural lock on ${result.name}. Information ready.`);
       }
     } catch (err) {
       console.error("Link failure:", err);
-      setClickPos(null);
     } finally {
       setIsAnalyzing(false);
+      setClickPos(null);
     }
-  };
-
-  const handleTagClick = async (id: string) => {
-    const tag = tags.find(t => t.id === id);
-    if (!tag) return;
-    
-    // For now, we just re-run the analysis at those coords or show placeholder
-    // In a full app, we'd store the result object with the tag.
-    // For this demo, let's just use the current selected state logic.
-  };
-
-  const closePanel = () => {
-    setSelectedObject(null);
-    setAiImage(null);
-    setClickPos(null);
-    setStatus(AppStatus.SCANNING);
   };
 
   return (
@@ -159,10 +140,10 @@ const App: React.FC = () => {
             </div>
             
             <h1 className="text-4xl md:text-6xl font-black tracking-[0.6em] mb-4 text-white uppercase italic">VISION_AR</h1>
-            <p className="text-white/20 max-w-sm text-[10px] leading-relaxed mb-16 uppercase tracking-[0.4em] mono">
-              Distributed Intelligence Hub<br/>
-              Neural_Net Protocol v.2.0.1<br/>
-              Awaiting Secure Node Uplink
+            <p className="text-white/20 max-w-sm text-[10px] leading-relaxed mb-16 uppercase tracking-[0.4em] mono text-center">
+              Topographic Mapping & Neural Recognition<br/>
+              Live Hardware Uplink Required<br/>
+              Awaiting Secure Context
             </p>
             
             <button 
@@ -170,7 +151,7 @@ const App: React.FC = () => {
               className="group relative px-20 py-6 overflow-hidden border border-white/20 transition-all hover:border-white active:scale-95"
             >
               <div className="absolute inset-0 bg-white translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-              <span className="relative z-10 text-white group-hover:text-black text-[11px] font-bold uppercase tracking-[0.5em] mono">Initialize_Node</span>
+              <span className="relative z-10 text-white group-hover:text-black text-[11px] font-bold uppercase tracking-[0.5em] mono">Initialize_AR_Node</span>
             </button>
           </div>
         ) : (
@@ -183,23 +164,16 @@ const App: React.FC = () => {
           />
         )}
 
-        {(status === AppStatus.SCANNING || status === AppStatus.VIEWING_RESULT || status === AppStatus.CAMERA_REQUEST) && (
+        {(status === AppStatus.SCANNING || status === AppStatus.CAMERA_REQUEST) && (
           <HUDOverlay 
             status={status} 
             onClick={handleScanClick} 
             isAnalyzing={isAnalyzing}
             clickPos={clickPos}
             tags={tags}
-            onTagClick={handleTagClick}
-          />
-        )}
-
-        {status === AppStatus.VIEWING_RESULT && selectedObject && (
-          <IntelligencePanel 
-            result={selectedObject}
-            aiImage={aiImage}
-            onClose={closePanel}
-            isGeneratingImage={isGeneratingImage}
+            activeTagId={activeTagId}
+            onTagClick={(id) => setActiveTagId(id)}
+            onCloseTag={() => setActiveTagId(null)}
           />
         )}
 
@@ -216,7 +190,7 @@ const App: React.FC = () => {
               onClick={() => window.location.reload()}
               className="px-12 py-5 border border-white/20 text-white/50 font-bold mono uppercase text-[10px] tracking-[0.4em] hover:text-white transition-all active:scale-95"
             >
-              Reboot_System
+              Retry_Hardware_Link
             </button>
           </div>
         )}
@@ -229,19 +203,12 @@ const App: React.FC = () => {
               <div key={i} className={`w-0.5 h-2 bg-white/20 ${isAnalyzing ? 'animate-pulse' : ''}`} style={{ animationDelay: `${i * 0.1}s` }}></div>
             ))}
           </div>
-          <span className="text-[8px] font-bold uppercase tracking-[0.5em] text-white/30 mono">Uplink: STABLE // Encrypted_Feed</span>
+          <span className="text-[8px] font-bold uppercase tracking-[0.5em] text-white/30 mono">Uplink: STABLE // Feed: {(status === AppStatus.SCANNING) ? 'ACTIVE' : 'READY'}</span>
         </div>
-        <div className="text-[8px] font-bold uppercase tracking-[0.4em] text-white/20 mono hidden sm:block">No unauthorized access detected</div>
+        <div className="text-[8px] font-bold uppercase tracking-[0.4em] text-white/20 mono hidden sm:block">No unauthorized access detected // ENC_SSL_256</div>
       </footer>
       
       <style>{`
-        .animate-scan {
-          animation: scan 4s linear infinite;
-        }
-        @keyframes scan {
-          0% { top: 0; }
-          100% { top: 100%; }
-        }
         .animate-spin-slow {
           animation: spin 20s linear infinite;
         }

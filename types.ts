@@ -9,14 +9,13 @@ export interface RecognitionResult {
   tacticalAnalysis: string;
   materialComposition: string;
   referenceImage?: string;
+  aiVisual?: string | null;
 }
 
-export interface PersistentTag {
+export interface PersistentTag extends RecognitionResult {
   id: string;
   x: number;
   y: number;
-  name: string;
-  category: string;
   timestamp: number;
 }
 
@@ -30,6 +29,5 @@ export enum AppStatus {
   CAMERA_REQUEST = 'CAMERA_REQUEST',
   SCANNING = 'SCANNING',
   ANALYZING = 'ANALYZING',
-  VIEWING_RESULT = 'VIEWING_RESULT',
   ERROR = 'ERROR'
 }
