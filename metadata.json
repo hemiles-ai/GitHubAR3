@@ -1,0 +1,7 @@
+{
+  "name": "VisionAR - AI Object Intelligence 3 Tester",
+  "description": "An interactive AR-like experience that recognizes real-world objects through your camera and provides deep intelligence, descriptions, and AI-reimagined visuals using Gemini.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
